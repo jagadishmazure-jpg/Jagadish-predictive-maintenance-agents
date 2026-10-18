@@ -360,3 +360,46 @@ def test_demo_top_work_orders():
     top = demo_helpers.top_work_orders(2)
     assert len(top) == 2
     assert top[0]["score"] >= top[1]["score"]
+
+
+# ---------- review fixes (grokbot-portfolio, 2026-10-18) ----------
+
+def test_review_asset_in_alarm_is_at_least_alert_floor():
+    conn = fresh_conn()
+    conn.execute("UPDATE sensor_readings SET vibration_mm_s = 5.2, temp_c = 88 WHERE asset_id = 'FAN-402'")
+    s = predict.score_asset(conn, "FAN-402")
+    # flat trend at alarm level used to give risk 0.275 and 130 days RUL
+    assert s["risk"] == predict.ALERT_RISK_FLOOR and s["rul_days"] == 36
+    assert s["breakdown"]["alert_floor"] and [a[0] for a in s["alerts"]] == ["FM-VIB-01", "FM-TEMP-01"]
+
+
+def test_review_alert_floor_does_not_change_the_seed_anchor():
+    worst = predict.predict_all(fresh_conn())[0]
+    assert (worst["asset_id"], worst["risk"], worst["rul_days"]) == ("PUMP-101", 0.772, 41)
+    assert not worst["breakdown"]["alert_floor"]
+
+
+def test_review_asset_without_readings_does_not_crash_ranking():
+    conn = fresh_conn()
+    conn.execute("INSERT INTO assets VALUES ('PUMP-103','centrifugal pump','L1',2026,4)")
+    conn.execute("INSERT INTO work_orders VALUES ('WO-0050','PUMP-103','Commission pump','medium','open',29)")
+    assert len(predict.predict_all(conn)) == 10
+    assert predict.assets_without_readings(conn) == ["PUMP-103"]
+    ranked = prioritize.prioritize(conn)
+    assert ranked[-1]["wo_id"] == "WO-0050" and ranked[-1]["band"] == "REVIEW"
+    assert ranked[0]["wo_id"] == "WO-0043"
+
+
+@pytest.mark.parametrize("text", ["call (555) 123-4567", "call +1 (555) 123-4567", "call 555.123.4567"])
+def test_review_phone_formats_scrubbed(text):
+    out, n = pii.scrub(text)
+    assert out == "call [PHONE]" and n == 1
+
+
+@pytest.mark.parametrize("text", [
+    "bearing replaced on 2026-10-18",            # used to become "on [PHONE]"
+    "readings 12 14 16 18 20 22 mm/s",           # used to become "readings [PHONE]"
+    "work order WO-20261018-0001",
+])
+def test_review_dates_readings_and_ids_kept(text):
+    assert pii.scrub(text) == (text, 0)

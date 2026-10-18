@@ -3,13 +3,21 @@
 SEC-SELECT-01: only SELECT statements may run.
 SEC-SELECT-02: write keywords (INSERT/UPDATE/DELETE/DROP/...) are rejected;
     the scan is string-literal aware so words inside quotes don't false-positive.
-SEC-SELECT-03: every query is capped with a LIMIT when none is present.
+SEC-SELECT-03: at most 100 rows are returned; rows past the cap are never
+    fetched, whatever LIMIT the caller wrote.
+SEC-SELECT-04: only the read-only views may be read. Enforced by a SQLite
+    authorizer (predmaint/authz.py, ADR 0001), so comma joins, quoted names
+    and comments cannot reach base tables or sqlite_master.
 """
 
 from __future__ import annotations
 
 import re
 import sqlite3
+
+from . import authz
+
+MAX_ROWS = 100
 
 VIEW_DDLS = {
     "v_asset_health": """
@@ -67,13 +75,13 @@ def ensure_select_only(sql: str, max_rows: int = 100) -> str:
         raise GatewayError("SEC-SELECT-01: only SELECT statements are allowed")
     if WRITE_KEYWORDS.search(_strip_literals(cleaned)):
         raise GatewayError("SEC-SELECT-02: write statements are not allowed")
-    if not re.search(r"(?i)\blimit\s+\d+\s*$", cleaned):
-        cleaned = f"{cleaned} LIMIT {max_rows}"  # SEC-SELECT-03
+    if not re.search(r"(?i)\blimit\b", _strip_literals(cleaned)):
+        cleaned = f"{cleaned} LIMIT {max_rows}"  # SEC-SELECT-03 (also enforced at fetch)
     return cleaned
 
 
 def create_views(conn: sqlite3.Connection) -> None:
-    for name, ddl in VIEW_DDLS.items():
+    for ddl in VIEW_DDLS.values():
         conn.execute(ddl.replace("CREATE VIEW", "CREATE VIEW IF NOT EXISTS", 1))
     conn.commit()
 
@@ -81,6 +89,14 @@ def create_views(conn: sqlite3.Connection) -> None:
 def run_query(conn: sqlite3.Connection, sql: str, params: tuple = ()) -> list[dict]:
     """Run a gateway-checked SELECT; return rows as dicts."""
     safe = ensure_select_only(sql)
-    cur = conn.execute(safe, params)
-    cols = [d[0] for d in cur.description]
-    return [dict(zip(cols, row)) for row in cur.fetchall()]
+    with authz.views_only(conn, VIEW_DDLS) as denied:
+        try:
+            cur = conn.execute(safe, params)
+        except sqlite3.DatabaseError:
+            if denied:
+                raise GatewayError(
+                    f"SEC-SELECT-04: '{denied[0]}' is not a read-only view") from None
+            raise
+        cols = [d[0] for d in cur.description]
+        rows = cur.fetchmany(MAX_ROWS)  # SEC-SELECT-03
+    return [dict(zip(cols, row)) for row in rows]
