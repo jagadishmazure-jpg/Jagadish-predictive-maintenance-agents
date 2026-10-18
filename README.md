@@ -1,6 +1,6 @@
 # Jagadish-predictive-maintenance-agents
 
-**Recruiter summary:** Unplanned downtime is the most expensive failure mode in manufacturing — and it usually announces itself weeks early in vibration and temperature trends. This repo is an end-to-end reliability-operations agent: it answers open-ended maintenance questions over synthetic telemetry, scores every asset with a transparent remaining-useful-life model, ranks the work-order backlog by criticality x failure-probability x production-impact (impact currently equals criticality), and stops line-stop recommendations and emergency work orders at a human confirmation gate. Proof: 65 regression checks green; the demo flags PUMP-101 at risk 0.772 with 41 days RUL and ranks WO-0043 (inspect pump bearings) P1 at 77.2.
+**Recruiter summary:** Unplanned downtime is the most expensive failure mode in manufacturing — and it usually announces itself weeks early in vibration and temperature trends. This repo is an end-to-end reliability-operations agent: it answers open-ended maintenance questions over synthetic telemetry, scores every asset with a transparent remaining-useful-life model, ranks the work-order backlog by criticality x failure-probability x production-impact (impact currently equals criticality), and stops line-stop recommendations and emergency work orders at a human confirmation gate. Proof: 81 regression checks green; the demo flags PUMP-101 at risk 0.772 with 41 days RUL and ranks WO-0043 (inspect pump bearings) P1 at 77.2.
 
 ## Problem → approach → outcome
 
@@ -61,7 +61,7 @@ Same FDE spine (SQLite telemetry, text-to-SQL, SOP RAG, escalation, audit), but 
 
 Reviewed against the portfolio standard after the build. Bugs found and fixed, each now pinned by a test:
 
-1. **Gateway had no view allowlist.** It blocked writes, but `SELECT * FROM assets`, a comma join, `"sqlite_master"` and `FROM/**/assets` all read base tables or the schema, and a caller-written `LIMIT 100000` (or `LIMIT 100000 -- x`) returned 1,000 rows past the 100-row cap. A SQLite authorizer (`predmaint/authz.py`, ADR 0001) now refuses any read that is not a published view (`SEC-SELECT-04`); rows past 100 are never fetched.
+1. **Gateway had no view allowlist.** It blocked writes, but `SELECT * FROM assets`, a comma join, `"sqlite_master"` and `FROM/**/assets` all read base tables or the schema, and a caller-written `LIMIT 100000` (or `LIMIT 100000 -- x`) returned 1,000 rows past the 100-row cap. A SQLite authorizer (`predmaint/authz.py`, ADR 0001) now refuses any read that is not a published view (`SEC-SELECT-04`); rows past 100 are never fetched. Synced to the shared template v3 on 2026-10-18: `load_extension` is denied explicitly and `sqlite_master` stays denied even if listed as allowed (`tests/test_authorizer_sync.py`).
 2. **An asset in alarm could get a long RUL.** Temperature level is not a scorer feature and vibration level is only 20%, so an asset held flat at 5.2 mm/s and 88 C fired FM-VIB-01 and FM-TEMP-01 yet scored risk 0.275, 130 days RUL, P3. New rule FM-ALERT-01 floors risk at 0.80 (36 days) whenever an FM alert fires, and the breakdown says so. Seeded results are unchanged (no seeded asset is in alarm).
 3. **One asset without readings crashed the whole ranking.** `predict_all` and `prioritize` raised `ValueError` for a newly installed asset. Assets without readings are now skipped by the scorer (`assets_without_readings()` lists them) and their work orders get band REVIEW (PM-PRIO-03), listed last.
 4. **PII scrubber destroyed maintenance facts.** The phone pattern matched any 10+ character digit run, so `2026-10-18` became `[PHONE]`, `readings 12 14 16 18 20 22` became `readings [PHONE]`, and `(555) 123-4567` left a stray `(`. It now uses the shared anchored phone pattern plus a card pattern (tested both ways).
@@ -91,7 +91,7 @@ Test count (also checked by CI):
 
 <!-- run: python scripts/count_tests.py -->
 ```text
-65 tests collected
+81 tests collected
 ```
 <!-- /run -->
 
@@ -99,7 +99,7 @@ Test count (also checked by CI):
 
 | Item | Status |
 |---|---|
-| Telemetry, 5 text-to-SQL intents, gateway | Built, 65 checks green |
+| Telemetry, 5 text-to-SQL intents, gateway | Built, 81 checks green |
 | CI on every push: ruff, tests, docs drift check, hashed brand check, gitleaks; CodeQL; Dependabot | Built |
 | Failure-prediction scorer (RUL + breakdown) | Built, tested incl. alert rules |
 | Work-order prioritizer (P1/P2/P3) | Built, tested incl. band cutoffs |
@@ -121,7 +121,7 @@ Test count (also checked by CI):
 ## Run it
 
 ```bash
-python -m pytest tests/ -q          # 65 checks
+python -m pytest tests/ -q          # 81 checks
 python scripts/count_tests.py       # prints the real total
 pip install streamlit && streamlit run demo/app.py
 ```
