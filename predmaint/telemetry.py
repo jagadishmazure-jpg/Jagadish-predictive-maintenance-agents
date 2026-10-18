@@ -1,6 +1,6 @@
 """Synthetic reliability telemetry (SQLite), deterministic with seed 42.
 
-Fictional plant: Ironpeak Manufacturing. Assets emit vibration (mm/s) and
+Fictional plant: Kestrelmoor Manufacturing. Assets emit vibration (mm/s) and
 temperature (C) readings with deterministic trends — one pump is degrading,
 the rest are stable. All names and brands are invented.
 """

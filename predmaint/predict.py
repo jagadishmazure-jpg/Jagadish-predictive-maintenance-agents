@@ -18,6 +18,9 @@ TEMP_ALERT = 85.0
 W_VIB_SLOPE, W_TEMP_SLOPE, W_VIB_LEVEL, W_AGE = 0.40, 0.30, 0.20, 0.10
 # FM-RUL-02: baseline horizon (days) scaled by (1 - risk)
 BASE_HORIZON_DAYS = 180
+# FM-ALERT-01: an asset already past an FM-VIB-01/FM-TEMP-01 threshold is at
+# least this risky, whatever its trend (a flat line at alarm level is not safe)
+ALERT_RISK_FLOOR = 0.80
 CURRENT_YEAR = 2026
 
 
@@ -66,6 +69,11 @@ def score_asset(conn: sqlite3.Connection, asset_id: str,
 
     risk = (W_VIB_SLOPE * f_vib_slope + W_TEMP_SLOPE * f_temp_slope
             + W_VIB_LEVEL * f_vib_level + W_AGE * f_age)
+    alerts = [r for r in (("FM-VIB-01", vib_level >= VIB_ALERT),
+                          ("FM-TEMP-01", temps[-1] >= TEMP_ALERT)) if r[1]]
+    floor_applied = bool(alerts) and risk < ALERT_RISK_FLOOR
+    if floor_applied:
+        risk = ALERT_RISK_FLOOR
     rul_days = max(1, round(BASE_HORIZON_DAYS * (1.0 - risk)))
     return {
         "asset_id": asset_id,
@@ -82,19 +90,27 @@ def score_asset(conn: sqlite3.Connection, asset_id: str,
                 "vib_level": round(W_VIB_LEVEL * f_vib_level, 3),
                 "age": round(W_AGE * f_age, 3),
             },
+            "alert_floor": floor_applied,  # FM-ALERT-01
         },
-        "alerts": [
-            r for r in (
-                ("FM-VIB-01", vib_level >= VIB_ALERT),
-                ("FM-TEMP-01", temps[-1] >= TEMP_ALERT),
-            ) if r[1]
-        ],
+        "alerts": alerts,
     }
 
 
 def predict_all(conn: sqlite3.Connection) -> list[dict]:
-    """Score every asset; return sorted by risk (highest first)."""
-    assets = [r[0] for r in conn.execute("SELECT asset_id FROM assets")]
+    """Score every asset with readings; return sorted by risk (highest first).
+
+    Assets with no readings yet (e.g. newly installed) are skipped instead of
+    failing the whole ranking; ``assets_without_readings`` lists them.
+    """
+    assets = [r[0] for r in conn.execute(
+        "SELECT asset_id FROM assets WHERE asset_id IN (SELECT asset_id FROM sensor_readings)")]
     scored = [score_asset(conn, a) for a in assets]
     scored.sort(key=lambda s: s["risk"], reverse=True)
     return scored
+
+
+def assets_without_readings(conn: sqlite3.Connection) -> list[str]:
+    """Assets the scorer cannot assess yet (no sensor readings)."""
+    return [r[0] for r in conn.execute(
+        "SELECT asset_id FROM assets WHERE asset_id NOT IN "
+        "(SELECT asset_id FROM sensor_readings) ORDER BY asset_id")]

@@ -8,7 +8,7 @@ flowchart LR
     O --> W[prioritize: WO ranking]
     O --> R[SOP RAG: TF-IDF + citations]
     O --> V[Vendor advisory feed: fake/live-gap]
-    T --> G[SELECT-only gateway<br/>SEC-SELECT-01/02/03]
+    T --> G[SELECT-only gateway<br/>SEC-SELECT-01..04<br/>+ SQLite authorizer]
     G --> DB[(SQLite telemetry)]
     P --> DB
     O --> E[T1-T4 escalation]

@@ -12,11 +12,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 try:
     import streamlit as st
 except ImportError:  # pragma: no cover
-    raise SystemExit("pip install streamlit, then rerun: streamlit run demo/app.py")
+    raise SystemExit("pip install streamlit, then rerun: streamlit run demo/app.py") from None
 
 from predmaint import demo_helpers, orchestrator, telemetry, views  # noqa: E402
 
-st.title("Ironpeak Manufacturing — Reliability Operations (demo)")
+st.title("Kestrelmoor Manufacturing — Reliability Operations (demo)")
 st.caption("Synthetic data. Nothing here is real plant operations data.")
 
 with st.expander("Reliability summary"):

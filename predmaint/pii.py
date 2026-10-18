@@ -1,6 +1,6 @@
 """PII scrubber for free-text feedback.
 
-Email addresses, phone-like digit runs, and SSN-like patterns are replaced
+Email addresses, phone numbers, card numbers and SSN-like patterns are replaced
 with typed placeholders before anything is stored. The scrubber reports how
 many redactions it made so callers can audit the behavior.
 """
@@ -12,7 +12,11 @@ import re
 _PATTERNS = [
     (re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"), "[EMAIL]"),
     (re.compile(r"\b\d{3}-\d{2}-\d{4}\b"), "[SSN]"),
-    (re.compile(r"\+?\d[\d\s().-]{8,}\d"), "[PHONE]"),
+    # Phone numbers in written forms, including "(555) 123-4567". The old
+    # pattern matched any 10+ character digit run, which redacted dates and
+    # lists of sensor readings - the facts a maintenance correction is about.
+    (re.compile(r"(?<!\w)(?:\+?1[-.\s]?)?(?:\(\d{3}\)\s?|\d{3}[-.\s]?)\d{3}[-.\s]?\d{4}\b"), "[PHONE]"),
+    (re.compile(r"\b\d{4}[- ]\d{4}[- ]\d{4}[- ]\d{4}\b"), "[CARD]"),
 ]
 
 
